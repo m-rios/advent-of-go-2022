@@ -9,9 +9,24 @@ import (
     "strings"
 )
 
-type ArrayOrInt struct {
+type Element struct {
     value int
-    array []ArrayOrInt
+    list  []Element
+}
+
+func printElementList(list []Element) string {
+    result := fmt.Sprint("[")
+    for _, element := range list {
+        if isList(element) {
+            result += printElementList(element.list)
+        } else {
+            result += fmt.Sprintf("%d,", element.value)
+        }
+    }
+    if string(result[len(result) - 1]) == "," {
+        result = result[:len(result) - 1]
+    }
+    return result + fmt.Sprint("]")
 }
 
 func consumeCharacter(input *string) {
@@ -67,6 +82,7 @@ func treatAsList(packet string, currentValue int) string {
 
 // returns < 0 if left is smaller, 0 if left and right are equal and > 0 if right is smaller
 func comparePackets(leftPacket, rightPacket string) int {
+    fmt.Printf("Compare `%s` vs `%s`\n", leftPacket, rightPacket)
     // get the next value in the packets: either a number or a closening or opening bracket.
     // note that parseNextValue modifies the packet, removing the first token
     leftValue, leftOpenList, leftCloseList := parseNextValue(&leftPacket)
@@ -108,6 +124,57 @@ func comparePackets(leftPacket, rightPacket string) int {
     return leftValue - rightValue
 }
 
+func isList(element Element) bool {
+    return len(element.list) > 0
+}
+
+func compareElementLists(leftList, rightList []Element) int {
+    fmt.Printf("Compare %s vs %s \n", printElementList(leftList), printElementList(rightList))
+
+    for len(leftList) > 0 && len(rightList) > 0 {
+        left, right := leftList[0], rightList[0]
+        leftList, rightList = leftList[1:], rightList[1:]
+
+        switch {
+        case isList(left) && isList(right):
+            if subResult := compareElementLists(left.list, right.list); subResult == 0 {
+                continue
+            } else {
+                return subResult
+            }
+        case isList(left):
+            if subResult := compareElementLists(left.list, []Element{right}); subResult == 0 {
+                continue
+            } else {
+                return subResult
+            }
+        case isList(right):
+            if subResult := compareElementLists([]Element{left}, right.list); subResult == 0 {
+                continue
+            } else {
+                return subResult
+            }
+        default: // both are ints
+            if result := left.value - right.value; result == 0 {
+                continue
+            } else {
+                return result
+            }
+        }
+    }
+
+    if len(leftList) > 0 {
+        return 1
+    } else {
+        return -1
+    }
+}
+
+func removeWrappingBrackets(packet string) string {
+    packet = packet[1:]
+    return packet[:len(packet) - 1]
+}
+
 func isRightOrder(pair string) bool {
     // we can expect packets to have length 2
     packets := strings.Split(pair, "\n")
@@ -115,7 +182,25 @@ func isRightOrder(pair string) bool {
         log.Fatalf("isRightOrder encountered an unexpected packet pair length. Expected 2, got %d", size)
     }
 
-    return comparePackets(packets[0], packets[1]) < 0
+//    return comparePackets(packets[0], packets[1]) < 0
+    return compareElementLists(packetToList(&removeWrappingBrackets(packets[0]), []Element{}), packetToList(&packets[1], []Element{})) < 0
+}
+
+func packetToList(packet *string, elems []Element) []Element {
+    for *packet != "" {
+        value, opens, closes := parseNextValue(packet)
+        switch {
+        case opens:
+            subList := packetToList(packet, make([]Element, 0))
+            elems = append(elems, Element{list: subList})
+        case closes:
+            return elems
+        default:
+            // if it doesn't open or close then it's an int value
+            elems = append(elems, Element{value: value})
+        }
+    }
+    return elems
 }
 
 func main() {
@@ -124,10 +209,13 @@ func main() {
 
     var rightOrderSum int
     for idx, pair := range pairs {
+        fmt.Printf("== Pair %d ==\n", idx + 1)
         if isRightOrder(pair) {
             fmt.Printf("pair %d is in the right order\n", idx + 1)
             // idx is 0-based index, but aoc expect 1-based indexes, so we add 1
             rightOrderSum += 1 + idx
+        } else {
+            fmt.Printf("pair %d is in the wrong order\n", idx + 1)
         }
     }
     fmt.Println(rightOrderSum)
